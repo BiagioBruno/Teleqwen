@@ -1,20 +1,19 @@
 [project]
 name = "teleqwen"
 version = "0.1.0"
-description = "Add your description here"
+description = "Telegram assistant with local Ollama inference and private conversation history"
 readme = "README.md"
 authors = [
     { name = "Biagio", email = "biagio.bruno5@gmail.com" }
 ]
 requires-python = ">=3.15"
 dependencies = [
-    "python-dotenv>=1.2.4",
     "python-telegram-bot>=22.8",
-    "requests>=2.34.2",
+    "httpx>=0.28.1,<0.29",
 ]
 
 [project.scripts]
-teleqwen = "teleqwen:main"
+teleqwen = "teleqwen.main:main"
 
 [build-system]
 requires = ["uv_build>=0.13.7,<0.14.0"]
