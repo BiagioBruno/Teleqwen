@@ -1,7 +1,7 @@
 [project]
 name = "teleqwen"
 version = "0.1.0"
-description = "Telegram assistant with local Ollama inference and private conversation history"
+description = "Single-chat Telegram assistant with Ollama and a small saved context"
 readme = "README.md"
 authors = [
     { name = "Biagio", email = "biagio.bruno5@gmail.com" }
