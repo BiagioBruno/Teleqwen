@@ -4,6 +4,7 @@ import warnings
 
 from teleqwen.bot.telegram import TelegramBot
 from teleqwen.config import load_settings
+from teleqwen.agent.agent import agent
 
 
 def read_token() -> str:
@@ -15,16 +16,19 @@ def read_token() -> str:
 
 def main():
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s: %(message)s")
+    logging.getLogger("httpx").setLevel(logging.WARNING)
     logging.info("Starting Teleqwen. Press Ctrl+C to stop.")
     try:
         settings = load_settings(read_token())
-        TelegramBot(settings).run()
+        logging.info("Settings loaded")
+        TelegramBot(settings, agent(settings)).run()
     except (ValueError, OSError) as exc:
         raise SystemExit(str(exc)) from None
     except (EOFError, getpass.GetPassWarning):
         raise SystemExit("Run Teleqwen in an interactive terminal to enter the token.") from None
     except KeyboardInterrupt:
         pass
+    logging.info("Teleqwen stopped")
 
 
 if __name__ == "__main__":

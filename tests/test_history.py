@@ -4,7 +4,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from teleqwen.storage.history import History, MAX_TURNS
+from teleqwen.storage.history import History, MAX_TURNS, SYSTEM_PROMPT
 
 
 class HistoryTests(unittest.TestCase):
@@ -16,14 +16,14 @@ class HistoryTests(unittest.TestCase):
 
     def test_context_and_chat_survive_restart(self):
         self.assertTrue(self.history.connect(123))
-        self.history.append("Ciao 😀", "Ciao!")
+        self.history.append("Hello 😀", "Hello!")
         restored = History(self.path)
         self.assertTrue(restored.connect(123))
         self.assertFalse(restored.connect(456))
         self.assertEqual(restored.prompt("Next"), [
-            {"role": "system", "content": "You are a personal assistant. Reply clearly and concisely."},
-            {"role": "user", "content": "Ciao 😀"},
-            {"role": "assistant", "content": "Ciao!"},
+            {"role": "system", "content": SYSTEM_PROMPT},
+            {"role": "user", "content": "Hello 😀"},
+            {"role": "assistant", "content": "Hello!"},
             {"role": "user", "content": "Next"},
         ])
 

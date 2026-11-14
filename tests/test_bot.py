@@ -41,7 +41,7 @@ class BotTests(unittest.IsolatedAsyncioTestCase):
         await self.bot.handle_message(self.update(), None)
         self.bot = TelegramBot(self.bot.settings)
         self.chat.reset_mock()
-        for text in ["hello", "/clear", "/start"]:
+        for text in ["hello", "/clear", "/start", "/create"]:
             update = self.update(text, chat_id=2)
             await self.bot.handle_message(update, None)
             self.assertIn("another private chat", update.message.reply_text.call_args.args[0])
@@ -80,6 +80,38 @@ class BotTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual("".join(parts), answer)
         self.assertTrue(all(len(part.encode("utf-16-le")) // 2 <= 4096 for part in parts))
 
+    async def test_create_sends_completed_script_in_safe_parts(self):
+        answer = "# " + "😀" * 4500 + "\n# Pippozzo"
+        self.chat.return_value = answer
+        update = self.update("/create")
+        await self.bot.handle_message(update, None)
+        self.chat.assert_awaited_once()
+        parts = [call.args[0] for call in update.message.reply_text.call_args_list]
+        self.assertEqual("".join(parts), answer)
+        self.assertTrue(all(len(part.encode("utf-16-le")) // 2 <= 4096 for part in parts))
+        prompt = self.chat.call_args.args[0]
+        self.assertEqual(self.bot.history.messages[0], prompt[-1])
+
+    async def test_create_retries_with_the_actual_prompt_and_previous_answer(self):
+        self.bot.history.append("old question", "old answer")
+        self.chat.side_effect = ["unfinished script", "completed script\n# Pippozzo"]
+        update = self.update("/create@Teleqwen")
+        await self.bot.handle_message(update, None)
+        self.assertEqual(self.chat.await_count, 2)
+        first_prompt = self.chat.call_args_list[0].args[0]
+        second_prompt = self.chat.call_args_list[1].args[0]
+        self.assertEqual(len(first_prompt), 2)
+        self.assertEqual(second_prompt[1], first_prompt[-1])
+        self.assertEqual(second_prompt[2], {"role": "assistant", "content": "unfinished script"})
+        update.message.reply_text.assert_awaited_once_with("completed script\n# Pippozzo")
+
+    async def test_create_stops_after_ten_unsuccessful_attempts(self):
+        self.chat.return_value = "unfinished script"
+        update = self.update("/create")
+        await self.bot.handle_message(update, None)
+        self.assertEqual(self.chat.await_count, 10)
+        update.message.reply_text.assert_awaited_once_with("Stopped after 10 attempts without a completed script.")
+
     async def test_delivery_failure_keeps_the_completed_exchange(self):
         update = self.update()
         update.message.reply_text.side_effect = NetworkError("offline")
@@ -106,4 +138,4 @@ class BotTests(unittest.IsolatedAsyncioTestCase):
         application = SimpleNamespace(bot=SimpleNamespace(set_my_commands=AsyncMock()))
         await self.bot.setup_commands(application)
         commands = application.bot.set_my_commands.call_args.args[0]
-        self.assertEqual([command.command for command in commands], ["start", "clear"])
+        self.assertEqual([command.command for command in commands], ["start", "clear", "create"])
