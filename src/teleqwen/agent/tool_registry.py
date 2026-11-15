@@ -4,8 +4,6 @@ import pkgutil
 import importlib
 import inspect
 from teleqwen.agent import tools
-
-import inspect
 import re
 from typing import get_type_hints, get_origin, get_args, Union, Literal
 import types
@@ -105,7 +103,7 @@ def discover_tools():
         )
 
         for name, func in inspect.getmembers(module, inspect.isfunction):
-            if func.__module__ != module.__name__:
+            if name.startswith("_") or func.__module__ != module.__name__:
                 continue
             registry[name] = func
             schemas.append(function_to_schema(func))
@@ -133,5 +131,15 @@ class ToolRegistry:
         if name not in self.registry:
             raise ValueError(f"Unknown tool: {name}")
 
+        if not isinstance(arguments, dict):
+            raise ValueError("Tool arguments must be an object")
+
         func = self.registry[name]
+        bound = inspect.signature(func).bind(**arguments)
+        hints = get_type_hints(func)
+        for argument, value in bound.arguments.items():
+            expected = hints.get(argument)
+            if expected is not None and type(value) is not expected:
+                raise ValueError(f"Invalid type for argument: {argument}")
+
         return func(**arguments)

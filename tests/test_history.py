@@ -53,6 +53,37 @@ class HistoryTests(unittest.TestCase):
                 self.history.append("new", "answer")
         self.assertEqual(self.path.read_bytes(), before)
 
+    def test_failed_changes_keep_memory_and_disk_in_sync(self):
+        self.history.connect(123)
+        for number in range(MAX_TURNS):
+            self.history.append(str(number), "answer")
+        before = self.path.read_bytes()
+        prompt = self.history.prompt("next")
+        for operation in [lambda: self.history.append("failed", "answer"), self.history.clear]:
+            for failure in ["write_text", "replace"]:
+                with self.subTest(operation=operation, failure=failure):
+                    with patch.object(Path, failure, side_effect=OSError("disk error")):
+                        with self.assertRaises(OSError):
+                            operation()
+                    self.assertEqual(self.path.read_bytes(), before)
+                    self.assertEqual(self.history.prompt("next"), prompt)
+                    self.assertEqual(self.history.chat_id, 123)
+        self.history.append("successful", "answer")
+        restored = History(self.path)
+        self.assertEqual(restored.messages, self.history.messages)
+        self.assertNotIn("failed", [message["content"] for message in restored.messages])
+
+    def test_failed_connection_can_be_retried(self):
+        for failure in ["write_text", "replace"]:
+            with self.subTest(failure=failure):
+                with patch.object(Path, failure, side_effect=OSError("disk error")):
+                    with self.assertRaises(OSError):
+                        self.history.connect(123)
+                self.assertIsNone(self.history.chat_id)
+                self.assertFalse(self.path.exists())
+        self.assertTrue(self.history.connect(456))
+        self.assertEqual(History(self.path).chat_id, 456)
+
     def test_invalid_json_is_not_silently_discarded(self):
         self.path.parent.mkdir()
         self.path.write_text("invalid json")

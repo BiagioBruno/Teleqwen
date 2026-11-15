@@ -11,7 +11,7 @@ class OllamaTests(unittest.IsolatedAsyncioTestCase):
     async def request(self, handler):
         client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
         with patch("teleqwen.services.ollama.httpx.AsyncClient", return_value=client):
-            return await chat([{"role": "user", "content": "hello"}], "http://localhost:11434/api/chat", "test")
+            return await chat([{"role": "user", "content": "hello"}], [], "http://localhost:11434/api/chat", "test")
 
     async def test_request_and_answer(self):
         def handler(request):
@@ -19,24 +19,63 @@ class OllamaTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(json.loads(request.content), {
                 "model": "test",
                 "messages": [{"role": "user", "content": "hello"}],
+                "tools": [],
                 "stream": False,
                 "think": False,
                 "options": {"num_ctx": 4096, "num_predict": 512},
             })
-            return httpx.Response(200, json={"message": {"content": " answer "}})
-        self.assertEqual(await self.request(handler), "answer")
+            return httpx.Response(200, json={"message": {"role": "assistant", "content": " answer "}})
+        self.assertEqual(await self.request(handler), {"role": "assistant", "content": " answer "})
 
     async def test_unavailable_server_or_model(self):
         for status in [404, 500]:
-            with self.subTest(status=status), self.assertRaisesRegex(OllamaError, "running"):
+            with self.subTest(status=status), self.assertRaisesRegex(OllamaError, "Cannot reach Ollama"):
                 await self.request(lambda request: httpx.Response(status, text="private details"))
         for error in [httpx.ConnectError("private details"), httpx.ReadTimeout("private details")]:
             def handler(request):
                 raise error
-            with self.subTest(error=error), self.assertRaisesRegex(OllamaError, "running"):
+            with self.subTest(error=error), self.assertRaisesRegex(OllamaError, "Cannot reach Ollama"):
                 await self.request(handler)
 
     async def test_invalid_responses(self):
-        for body in ["invalid", "[]", '{"message": null}', '{"message": {"content": ""}}', '{"message": {"content": 123}}']:
+        for body in ["invalid", "[]", "{}", '{"message": null}']:
             with self.subTest(body=body), self.assertRaisesRegex(OllamaError, "invalid response"):
                 await self.request(lambda request: httpx.Response(200, text=body))
+
+    async def test_invalid_message_content_and_role(self):
+        messages = [
+            {"role": "assistant", "content": content}
+            for content in ["", " \n\t", 123, True, None, [], {}]
+        ]
+        messages.extend([
+            {"role": "user", "content": "answer"},
+            {"content": "answer"},
+        ])
+        for message in messages:
+            with self.subTest(message=message), self.assertRaisesRegex(OllamaError, "invalid response"):
+                await self.request(lambda request: httpx.Response(200, json={"message": message}))
+
+    async def test_invalid_tool_calls(self):
+        for tool_calls in [
+            "invalid", {}, None, [None], [{}], [{"function": None}],
+            [{"function": {"name": "current_time"}}],
+            [{"function": {"name": "current_time", "arguments": "{}"}}],
+            [{"function": {"name": "current_time", "arguments": []}}],
+            [{"function": {"name": "", "arguments": {}}}],
+            [{"function": {"name": 123, "arguments": {}}}],
+        ]:
+            message = {"role": "assistant", "content": "answer", "tool_calls": tool_calls}
+            with self.subTest(tool_calls=tool_calls), self.assertRaisesRegex(OllamaError, "invalid response"):
+                await self.request(lambda request: httpx.Response(200, json={"message": message}))
+
+    async def test_tool_calls_without_text_are_valid(self):
+        for content in ["", " \n", None]:
+            message = {
+                "role": "assistant",
+                "tool_calls": [{"function": {"name": "current_time", "arguments": {}}}],
+            }
+            if content is not None:
+                message["content"] = content
+            with self.subTest(content=content):
+                response = await self.request(lambda request: httpx.Response(200, json={"message": message}))
+                self.assertEqual(response, message)
